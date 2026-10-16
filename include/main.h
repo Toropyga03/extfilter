@@ -85,6 +85,11 @@ public:
 		return _notify_acl_file;
 	}
 
+	std::string &getWhitelistFile()
+	{
+		return _whitelistFile;
+	}
+
 	static inline struct lcore_conf *getLcoreConf(uint32_t lcore_id)
 	{
 		return &_lcore_conf[lcore_id];
@@ -155,6 +160,7 @@ private:
 	int initSenderPort(uint8_t port, struct ether_addr *addr, uint8_t nb_tx_queue);
 	int initMemory(uint8_t nb_ports);
 	int initACL();
+	bool loadWhitelist();
 
 	uint8_t _get_ports_n_rx_queues(void);
 	uint8_t _get_port_n_rx_queues(uint8_t port);
@@ -173,6 +179,7 @@ private:
 	std::string _hostsFile;
 	std::string _protocolsFile;
 	std::string _statisticsFile;
+	std::string _whitelistFile;
 
 	bool _block_ssl_no_sni;
 

@@ -88,9 +88,22 @@ Blacklist files
 ------------------------
 Blacklist files format is [nfqfilter](https://github.com/max197616/nfqfilter).
 
+Whitelist (White list)
+----------------------
+A whitelist feature has been added to allow certain resources to bypass blocking even if they are present in the blacklist.
+The whitelist file uses the same format as blacklist files (domains, urls, hosts):
+- Domains: `example.com` (exact match)
+- Domains with mask: `*.example.com` (all subdomains)
+- URLs: `example.com/path/to/resource`
+- IPv4 addresses: `192.168.1.1/32` or `192.168.1.1`
+- IPv6 addresses: `[2001:db8::1]/128` or `[2001:db8::1]`
+
+The whitelist applies to all resource types: HTTP domains, URLs, SNI (in HTTPS requests), and IP addresses (via ACL).
+Whitelist has higher priority than blacklist: if a resource is in the whitelist, it will not be blocked.
+
 Blacklist updates
 -----------------------------
-Use SIGHUP for rereading updated blacklists without daemon restart.
+Use SIGHUP for rereading updated blacklists and whitelist without daemon restart.
 
 Project support
 ------

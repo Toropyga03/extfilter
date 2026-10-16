@@ -668,6 +668,7 @@ void extFilter::initialize(Application& self)
 	_sslFile = config().getString("ssllist","");
 	_hostsFile = config().getString("hostlist","");
 	_statisticsFile = config().getString("statisticsfile","");
+	_whitelistFile = config().getString("whitelist","");
 
 	std::string http_code = config().getString("http_code","");
 	if(!http_code.empty())
@@ -947,6 +948,12 @@ void extFilter::initialize(Application& self)
 	{
 		logger().fatal("Unable to load blacklists");
 		throw Poco::Exception("Unable to load blacklists");
+	}
+	
+	// Initialize whitelist
+	if(loadWhitelist())
+	{
+		logger().warning("Unable to load whitelist (non-fatal, continuing without whitelist)");
 	}
 }
 
@@ -1286,6 +1293,22 @@ bool extFilter::loadACL(std::set<struct rte_acl_ctx *> *to_del)
 		logger().error("Unable to init ACL");
 		return true;
 	}
+	return false;
+}
+
+bool extFilter::loadWhitelist()
+{
+	// Load IP whitelist for ACL
+	ACL::loadWhitelistIPs(_whitelistFile);
+	
+	// Load tries-based whitelist (domains, URLs, SNI)
+	if(_tries.loadWhitelist(_whitelistFile))
+	{
+		logger().error("Unable to load whitelist trie");
+		return true;
+	}
+	
+	logger().information("Whitelist successfully loaded");
 	return false;
 }
 

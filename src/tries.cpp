@@ -287,6 +287,13 @@ int TriesManager::checkURLBlocked(int thread_id, const char *hostname, uint32_t 
 	url_buf[buf_len] = 0;
 	try
 	{
+		// 1. Проверяем whitelist сначала - если ресурс в белом списке, не блокируем
+		if(_is_whitelist_ready && whitelist_tries.search_prefix(&_agents[thread_id], rhost, revhost_len, url_buf, buf_len))
+		{
+			return 0; // В белом списке - не блокируем
+		}
+		
+		// 2. Проверяем blacklist
 		if(_bl_manager.getHttpBlacklist()->getActiveTrie()->search_prefix(&_agents[thread_id], rhost, revhost_len, url_buf, buf_len))
 		{
 			struct BlacklistsManager::bl_service_profile *sp = _bl_manager.getActiveSP();
@@ -331,6 +338,13 @@ int TriesManager::checkSNIBlocked(int thread_id, const char *sni, uint32_t sni_l
 	}
 	try
 	{
+		// 1. Проверяем whitelist сначала - если SNI в белом списке, не блокируем
+		if(_is_whitelist_ready && whitelist_tries.lookup(&_agents[thread_id], (rptr+1), sni_len, (char *)sni, sni_len))
+		{
+			return 0; // В белом списке - не блокируем
+		}
+		
+		// 2. Проверяем blacklist
 		if(_bl_manager.getSNIBlacklist()->getActiveTrie()->lookup(&_agents[thread_id], (rptr+1), sni_len, (char *)sni, sni_len))
 		{
 			return 1;
@@ -391,4 +405,106 @@ bool BlacklistsManager::update()
 		return true;
 	std::string empty_s;
 	return _sni_bl.load(_sp[_active_profile].sni_file, empty_s, true);
+}
+
+bool TriesManager::loadWhitelist(std::string &whitelist_file)
+{
+	marisa::Keyset m_domains;
+	marisa::Keyset urls;
+	int domains_lines = 0;
+	int urls_lines = 0;
+	struct stat f_stat;
+	
+	if(whitelist_file.empty())
+	{
+		_logger.information("Whitelist file is not specified, whitelist disabled");
+		return false;
+	}
+	
+	if(stat(whitelist_file.c_str(), &f_stat))
+	{
+		_logger.error("Unable to stat whitelist file '%s'", whitelist_file);
+		return true;
+	}
+	
+	try
+	{
+		std::ifstream wl_file(whitelist_file, std::ios::binary);
+		if(!wl_file)
+		{
+			_logger.error("Failed to open whitelist file '%s'", whitelist_file);
+			return true;
+		}
+		
+		// Parse whitelist file - same format as blacklist
+		// Domains with mask (*.domain.com) go to m_domains
+		// URLs and exact domains go to urls
+		std::string line;
+		while (std::getline(wl_file, line))
+		{
+			if(line.empty() || line[0] == '#' || line[0] == ';')
+				continue;
+				
+			// Check if it's a domain with mask
+			std::size_t pos = line.find("*.");
+			if(pos != std::string::npos)
+			{
+				std::string s = line.substr(pos+1, line.length()-1);
+				std::string s1(s.c_str()+1);
+				urls.push_back(s1.c_str(), s1.length()); // store domain without previous dot
+				std::reverse(s.begin(), s.end());
+				m_domains.push_back(s.c_str(), s.length()); // store reverse
+				domains_lines++;
+			} 
+			else
+			{
+				// Check if it looks like an IP address (will be handled by ACL)
+				// For tries, we store URLs and exact domains
+				std::string s(line.c_str());
+				urls.push_back(s.c_str(), s.length());
+				urls_lines++;
+			}
+		}
+	} 
+	catch (const marisa::Exception &ex)
+	{
+		_logger.error("Working with whitelist failed: %s", std::string(ex.what()));
+		return true;
+	} 
+	catch (...)
+	{
+		_logger.error("Exception occured while working with whitelist file");
+		return true;
+	}
+	
+	_logger.information("Loaded %d lines from the whitelist file '%s' (%d domains with mask, %d URLs)", 
+		domains_lines + urls_lines, whitelist_file, domains_lines, urls_lines);
+	
+	// Build whitelist trie
+	try
+	{
+		if(!m_domains.empty())
+		{
+			whitelist_tries.mdomains_trie.build(m_domains, param_num_tries | param_tail_mode | param_node_order | param_cache_level);
+			whitelist_tries.setMDomainsReady();
+			_logger.information("Whitelist masked domains: #keys %z, #nodes %z", 
+				whitelist_tries.mdomains_trie.num_keys(), whitelist_tries.mdomains_trie.num_nodes());
+		}
+		
+		if(!urls.empty())
+		{
+			whitelist_tries.urls_trie.build(urls, param_num_tries | param_tail_mode | param_node_order | param_cache_level);
+			whitelist_tries.setURLsReady();
+			_logger.information("Whitelist URLs: #keys %z, #nodes %z", 
+				whitelist_tries.urls_trie.num_keys(), whitelist_tries.urls_trie.num_nodes());
+		}
+	} 
+	catch (const marisa::Exception &ex)
+	{
+		_logger.error("Unable to build marisa trie for whitelist: %s", std::string(ex.what()));
+		return true;
+	}
+	
+	setWhitelistReady();
+	return false;
 }

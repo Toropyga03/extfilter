@@ -23,9 +23,11 @@
 #include <Poco/Net/IPAddress.h>
 #include "acl.h"
 #include "main.h"
+#include <fstream>
 
 struct rte_acl_ctx* ACL::ipv4_acx[NB_SOCKETS];
 struct rte_acl_ctx* ACL::ipv6_acx[NB_SOCKETS];
+std::set<std::string> ACL::whitelist_ips;
 
 void getMemory(
     int* currRealMem, int* peakRealMem,
@@ -261,6 +263,13 @@ int ACL::initACL(std::map<std::string, int> &fns, int _numa_on, std::set<struct 
 */
 
 						Poco::Net::IPAddress ip_addr(ip);
+						// Check if IP is in whitelist - if yes, skip it
+						if(ACL::isIPInWhitelist(ip_addr.toString()))
+						{
+							_logger.debug("IP %s is in whitelist, skipping ACL rule creation", ip);
+							continue;
+						}
+						
 						if(ip_addr.family() == Poco::Net::IPAddress::IPv4)
 						{
 							struct ACL::acl4_rule rule;
@@ -384,4 +393,106 @@ int ACL::initACL(std::map<std::string, int> &fns, int _numa_on, std::set<struct 
 	}
 
 	return 0;
+}
+
+void ACL::loadWhitelistIPs(const std::string &whitelist_file)
+{
+	if(whitelist_file.empty())
+	{
+		poco_information_f1(_logger, "Whitelist file is not specified, IP whitelist disabled");
+		return;
+	}
+	
+	// Clear existing whitelist IPs
+	clearWhitelistIPs();
+	
+	try
+	{
+		std::ifstream wf(whitelist_file);
+		if(!wf)
+		{
+			_logger.error("Failed to open whitelist file '%s'", whitelist_file);
+			return;
+		}
+		
+		std::string line;
+		int lines_loaded = 0;
+		while(std::getline(wf, line))
+		{
+			// Skip comments and empty lines
+			if(line.empty() || line[0] == '#' || line[0] == ';')
+				continue;
+			
+			// Trim whitespace
+			size_t start = line.find_first_not_of(" \t\r\n");
+			if(start == std::string::npos)
+				continue;
+			line = line.substr(start);
+			size_t end = line.find_last_not_of(" \t\r\n");
+			if(end != std::string::npos)
+				line = line.substr(0, end + 1);
+			
+			// Skip if still empty after trim
+			if(line.empty())
+				continue;
+			
+			// Parse IP with or without mask
+			// Formats: 192.168.1.1/32, 192.168.1.1, [2001:db8::1]/128, [2001:db8::1]
+			std::size_t found = line.find('/');
+			std::string ip_str;
+			if(found != std::string::npos)
+			{
+				ip_str = line.substr(0, found);
+			} 
+			else
+			{
+				ip_str = line;
+			}
+			
+			// For IPv6, remove square brackets
+			if(!ip_str.empty() && ip_str.front() == '[')
+				ip_str.erase(0, 1);
+			if(!ip_str.empty() && ip_str.back() == ']')
+				ip_str.pop_back();
+			
+			// Trim again after removing brackets
+			start = ip_str.find_first_not_of(" \t");
+			if(start != std::string::npos)
+				ip_str = ip_str.substr(start);
+			end = ip_str.find_last_not_of(" \t");
+			if(end != std::string::npos)
+				ip_str = ip_str.substr(0, end + 1);
+			
+			try
+			{
+				Poco::Net::IPAddress ip(ip_str);
+				whitelist_ips.insert(ip.toString());
+				lines_loaded++;
+			}
+			catch(...)
+			{
+				_logger.warning("Invalid IP address in whitelist file '%s': %s", whitelist_file, line);
+			}
+		}
+		
+		_logger.information("Loaded %d IP addresses from whitelist file '%s'", lines_loaded, whitelist_file);
+	}
+	catch(const std::exception &ex)
+	{
+		_logger.error("Exception while loading whitelist file '%s': %s", whitelist_file, ex.what());
+	}
+	catch(...)
+	{
+		_logger.error("Unknown exception while loading whitelist file '%s'", whitelist_file);
+	}
+}
+
+bool ACL::isIPInWhitelist(const std::string &ip_str)
+{
+	return whitelist_ips.find(ip_str) != whitelist_ips.end();
+}
+
+void ACL::clearWhitelistIPs()
+{
+	whitelist_ips.clear();
 }

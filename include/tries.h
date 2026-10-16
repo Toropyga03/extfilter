@@ -135,15 +135,28 @@ private:
 class TriesManager
 {
 public:
-	TriesManager() : _logger(Poco::Logger::get("TriesManager"))
+	TriesManager() : _logger(Poco::Logger::get("TriesManager")), _is_whitelist_ready(false)
 	{};
 	~TriesManager() {};
 
 	int checkURLBlocked(int thread_id, const char *hostname, uint32_t host_len, const char *uri, uint32_t uri_len, char **redir_url);
 	int checkSNIBlocked(int thread_id, const char *sni, uint32_t sni_len);
+	bool loadWhitelist(std::string &whitelist_file);
 	inline BlacklistsManager *getBLManager()
 	{
 		return &_bl_manager;
+	}
+	inline Tries *getWhitelistTrie()
+	{
+		return &whitelist_tries;
+	}
+	inline bool isWhitelistReady()
+	{
+		return _is_whitelist_ready;
+	}
+	inline void setWhitelistReady()
+	{
+		_is_whitelist_ready = true;
 	}
 
 	marisa::Agent &getAgent(int no)
@@ -152,7 +165,9 @@ public:
 	}
 private:
 	BlacklistsManager _bl_manager;
+	Tries whitelist_tries;
 	marisa::Agent _agents[SEARCH_AGENTS];
 	char _url[MAX_WORKER_THREADS][4096];
 	Poco::Logger& _logger;
+	bool _is_whitelist_ready;
 };

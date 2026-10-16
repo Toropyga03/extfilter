@@ -19,6 +19,7 @@
 #pragma once
 
 #include <Poco/Logger.h>
+#include <Poco/Net/IPAddress.h>
 #include <rte_config.h>
 #include <rte_acl.h>
 #include <rte_ip.h>
@@ -41,6 +42,9 @@ public:
 	ACL();
 	~ACL();
 	int initACL(std::map<std::string, int> &fns, int _numa_on, std::set<struct rte_acl_ctx*> *to_del = NULL);
+	static void loadWhitelistIPs(const std::string &whitelist_file);
+	static bool isIPInWhitelist(const std::string &ip_str);
+	static void clearWhitelistIPs();
 
 	static struct rte_acl_ctx* ipv4_acx[NB_SOCKETS];
 	static struct rte_acl_ctx* ipv6_acx[NB_SOCKETS];
@@ -168,6 +172,7 @@ private:
 	rte_acl_ctx* _setup_acl(struct rte_acl_rule* acl_base, unsigned int acl_num, int ipv6, int socketid);
 
 	Poco::Logger& _logger;
+	static std::set<std::string> whitelist_ips;
 
 
 };

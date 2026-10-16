@@ -62,6 +62,12 @@ void ReloadTask::runTask()
 			} else {
 				_logger.information("Blacklists successfully loaded");
 			}
+			if(_parent->loadWhitelist())
+			{
+				_logger.error("Unable to load whitelist");
+			} else {
+				_logger.information("Whitelist successfully loaded");
+			}
 			for(auto it = to_del.begin(); it != to_del.end(); it++)
 			{
 				rte_acl_free(*it);
