@@ -107,4 +107,4 @@ Use SIGHUP for rereading updated blacklists and whitelist without daemon restart
 
 Project support
 ------
-If you would like to support project just donate to Yandex.Money wallet: 410014706910423
+
